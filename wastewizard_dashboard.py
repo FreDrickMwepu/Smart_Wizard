@@ -3,9 +3,9 @@ from PIL import Image
 import pandas as pd
 import random
 import time
-import matplotlib.pyplot as plt
+import plotly.express as px
 import numpy as np
-import io
+from streamlit_echarts import st_echarts
 
 # Load the image
 image = Image.open('Resources/Frame 53.png')
@@ -24,31 +24,28 @@ def get_sample_data():
     }
     return pd.DataFrame(data)
 
-# Function to create fill level visual
+# Plotly fill level visualization
 def create_fill_level_visual(levels):
-    fig, ax = plt.subplots(figsize=(10, 3))
+    fig = px.bar(x=[f'Bin {i+1}' for i in range(len(levels))], 
+                 y=levels, 
+                 color=levels, 
+                 labels={'x': 'Bins', 'y': 'Fill Level (%)'},
+                 title="Trash Bin Fill Levels",
+                 color_continuous_scale='RdYlGn_r')
+    return fig
 
-    bins = ['Empty', 'Low', 'Moderate', 'Mid-level', 'Nearly Full', 'Full']
-    colors = ['green', 'lime', 'yellowgreen', 'yellow', 'orange', 'red']
-
-    for i, level in enumerate(levels):
-        bin_level = int(level / 20)
-        color = colors[bin_level]
-        ax.barh(i, level, color=color)
-        ax.text(level + 5, i, f'{level}%', va='center', ha='left')
-
-    ax.set_xlim(0, 100)
-    ax.set_yticks(np.arange(len(levels)))
-    ax.set_yticklabels([f'Bin {i+1}' for i in range(len(levels))])
-    ax.set_xlabel('Fill Level (%)')
-    ax.set_title('Trash Bin Fill Levels')
-    ax.invert_yaxis()
-
-    plt.tight_layout()
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png')
-    buf.seek(0)
-    return buf
+# Circular gauge for fill level
+def render_gauge(level, bin_id):
+    option = {
+        "series": [{
+            "type": 'gauge',
+            "progress": {"show": "true"},
+            "axisLine": {"lineStyle": {"width": 20}},
+            "detail": {"formatter": '{value}%'},
+            "data": [{"value": level, "name": f"Fill Level - {bin_id}"}]
+        }]
+    }
+    st_echarts(option)
 
 # Streamlit application layout
 st.title('WasteWizard Remote Monitoring Dashboard')
@@ -67,19 +64,29 @@ data = get_sample_data()
 st.subheader('Smart Bin Status')
 st.dataframe(data)
 
-# Display metrics
+# Display metrics with color thresholds
 st.subheader('Key Metrics')
 col1, col2, col3 = st.columns(3)
 
-col1.metric("Average Fill Level (%)", f"{data['Fill Level (%)'].mean():.2f}")
-col2.metric("Average Temperature (°C)", f"{data['Temperature (°C)'].mean():.2f}")
-col3.metric("Average Humidity (%)", f"{data['Humidity (%)'].mean():.2f}")
+avg_fill = data['Fill Level (%)'].mean()
+avg_temp = data['Temperature (°C)'].mean()
+avg_humidity = data['Humidity (%)'].mean()
+
+col1.metric("Average Fill Level (%)", f"{avg_fill:.2f}", delta=None)
+col2.metric("Average Temperature (°C)", f"{avg_temp:.2f}", delta=None)
+col3.metric("Average Humidity (%)", f"{avg_humidity:.2f}", delta=None)
 
 # Plot fill levels
 st.subheader('Fill Levels Visualization')
 fill_levels = data['Fill Level (%)'].tolist()
-img_buf = create_fill_level_visual(fill_levels)
-st.image(img_buf, use_column_width=True)
+fig = create_fill_level_visual(fill_levels)
+st.plotly_chart(fig, use_container_width=True)
+
+# Display gauges for each bin
+st.subheader('Bin Fill Level Gauges')
+for idx, row in data.iterrows():
+    st.write(f"### {row['Bin ID']}")
+    render_gauge(row['Fill Level (%)'], row['Bin ID'])
 
 # Map visualization
 st.subheader('Smart Bin Locations')
@@ -102,8 +109,8 @@ if update_button:
         except KeyError as e:
             st.error(f"Error displaying map: {e}")
         fill_levels = data['Fill Level (%)'].tolist()
-        img_buf = create_fill_level_visual(fill_levels)
-        st.image(img_buf, use_column_width=True)
+        fig = create_fill_level_visual(fill_levels)
+        st.plotly_chart(fig, use_container_width=True)
         st.success("Data updated!")
 
 # Footer
